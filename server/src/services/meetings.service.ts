@@ -55,10 +55,12 @@ export class MeetingsService {
   /**
    * Liste toutes les séances (kDrive dossiers CP MM.DD croisés avec ChurchTools)
    */
-  async listMeetings(year = 2026): Promise<MeetingSummary[]> {
+  async listMeetings(year = 2026, forceRefresh = false): Promise<MeetingSummary[]> {
     const cacheKey = `meetings_list_${year}`;
-    const cached = cacheService.get<MeetingSummary[]>(cacheKey);
-    if (cached) return cached;
+    if (!forceRefresh) {
+      const cached = cacheService.get<MeetingSummary[]>(cacheKey);
+      if (cached) return cached;
+    }
 
     const yearFolderId = kDriveService.rootFolderId; // Actuellement CP - 2026 (4428)
     const files = await kDriveService.listFiles(yearFolderId);
@@ -69,7 +71,7 @@ export class MeetingsService {
     // Récupérer les rdv calendrier ChurchTools
     let appointments: ChurchToolsMeeting[] = [];
     try {
-      appointments = await churchToolsService.getUpcomingMeetings();
+      appointments = await churchToolsService.getUpcomingMeetings(forceRefresh);
     } catch (e: any) {
       console.warn('Impossible de charger les rendez-vous ChurchTools:', e.message);
     }
@@ -136,6 +138,11 @@ export class MeetingsService {
       const apptYear = parseInt(parts[0], 10);
       // FILTRAGE STRICT PAR ANNÉE : seulement l'année en cours (2026) !
       if (apptYear !== year) continue;
+
+      // Filtrage strict : uniquement les rencontres du CP
+      if (!churchToolsService.isCpMeeting(appt.title)) {
+        continue;
+      }
 
       const alreadyExists = meetings.some((m) => m.dateStr === apptDate);
       if (!alreadyExists) {

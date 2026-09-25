@@ -13,7 +13,8 @@ const router = Router();
 router.get('/', async (req, res) => {
   try {
     const year = parseInt((req.query.year as string) || '2026', 10);
-    const meetings = await meetingsService.listMeetings(year);
+    const forceRefresh = req.query.refresh === 'true';
+    const meetings = await meetingsService.listMeetings(year, forceRefresh);
     res.json({ meetings });
   } catch (err: any) {
     console.error('Erreur liste réunions:', err);
@@ -29,7 +30,8 @@ router.get('/', async (req, res) => {
 router.get('/upcoming', async (req, res) => {
   try {
     const year = new Date().getFullYear();
-    const meetingsList = await meetingsService.listMeetings(year);
+    const forceRefresh = req.query.refresh === 'true';
+    const meetingsList = await meetingsService.listMeetings(year, forceRefresh);
 
     const mappedMeetings = meetingsList.map((m) => ({
       id: m.folderId || m.dateStr,

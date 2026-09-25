@@ -56,6 +56,41 @@ export class ChurchToolsService {
   }
 
   /**
+   * Vérifie si un rendez-vous ChurchTools correspond exclusivement à une rencontre du CP.
+   * Exclut le Comité d'Eglise (AE / CE), les Assemblées de délégués, l'EMP, etc.
+   */
+  isCpMeeting(title: string): boolean {
+    if (!title) return false;
+    const lower = title.toLowerCase();
+
+    // 1. Exclure explicitement CE (Comité d'Église / AE), Assemblée des délégués, etc.
+    if (
+      lower.includes("comité d'eglise") ||
+      lower.includes("comite d'eglise") ||
+      lower.includes("comité d'église") ||
+      lower.includes("comite d'église") ||
+      lower.includes('(ae)') ||
+      lower.includes('délégué') ||
+      lower.includes('delegue') ||
+      lower.includes('assemblée des') ||
+      lower.includes('assemblee des') ||
+      lower.includes('ag ') ||
+      lower.includes('assemblée générale') ||
+      lower.includes('assemblee generale')
+    ) {
+      return false;
+    }
+
+    // 2. Doit être expressément une rencontre ou séance du CP
+    return (
+      /\bcp\b/i.test(title) ||
+      lower.includes('conseil pastoral') ||
+      lower.includes('comité pastoral') ||
+      lower.includes('comite pastoral')
+    );
+  }
+
+  /**
    * Récupère les prochaines réunions (avec cache de 30 minutes)
    */
   async getUpcomingMeetings(forceRefresh = false): Promise<ChurchToolsMeeting[]> {
@@ -99,7 +134,8 @@ export class ChurchToolsService {
             }
             const description = base.description || base.subtitle || '';
 
-            if (startDate) {
+            // Filtrage strict : uniquement les séances ou rencontres du CP (exclut CE, EMP, Assemblées...)
+            if (startDate && this.isCpMeeting(title)) {
               meetings.push({
                 id: base.id || item.id || `${startDate}_${title}`,
                 title,
@@ -135,7 +171,7 @@ export class ChurchToolsService {
           const description = item.description || item.appointment?.description || '';
           const calendarName = item.calendar?.name || '';
 
-          if (startDate) {
+          if (startDate && this.isCpMeeting(title)) {
             meetings.push({
               id: item.id || `${startDate}_${title}`,
               title,

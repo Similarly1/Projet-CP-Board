@@ -43,33 +43,16 @@ export const UnifiedMeetingsTab: React.FC = () => {
 
   const [isLoadingList, setIsLoadingList] = useState(true);
   const [isLoadingDetails, setIsLoadingDetails] = useState(false);
-  const [activeSubTab, setActiveSubTab] = useState<'both' | 'oj' | 'pv' | 'files'>('both');
+  const [activeSubTab, setActiveSubTab] = useState<'pv' | 'oj' | 'files'>('pv');
 
-  // Affichage plein écran et rétractation sidebar
+  // Rétractation sidebar
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  const [isFullscreenOj, setIsFullscreenOj] = useState(false);
-
-  // Quitter le plein écran OJ avec Échap
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isFullscreenOj) {
-        setIsFullscreenOj(false);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isFullscreenOj]);
 
   // Modale nouvelle séance
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newMeetingDate, setNewMeetingDate] = useState('');
   const [newMeetingTopic, setNewMeetingTopic] = useState('');
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
-
-  // Édition Ordre du Jour
-  const [isEditingOj, setIsEditingOj] = useState(false);
-  const [ojDraft, setOjDraft] = useState('');
-  const [isSavingOj, setIsSavingOj] = useState(false);
 
   // Upload annexe
   const [isUploadingFile, setIsUploadingFile] = useState(false);
@@ -122,7 +105,6 @@ export const UnifiedMeetingsTab: React.FC = () => {
         try {
           const details = await api.getMeetingDetails(meetingOrId);
           setSelectedDetails(details);
-          setOjDraft(details.ojContent || generateDefaultOj(details));
         } catch (err: any) {
           error(`Erreur chargement de la séance: ${err.message}`);
         } finally {
@@ -133,14 +115,12 @@ export const UnifiedMeetingsTab: React.FC = () => {
     }
 
     setSelectedMeetingId(meeting.folderId || meeting.dateStr);
-    setIsEditingOj(false);
 
     if (meeting.folderId) {
       setIsLoadingDetails(true);
       try {
         const details = await api.getMeetingDetails(meeting.folderId);
         setSelectedDetails(details);
-        setOjDraft(details.ojContent || generateDefaultOj(details));
       } catch (err: any) {
         error(`Erreur chargement de la séance: ${err.message}`);
       } finally {
@@ -164,7 +144,6 @@ export const UnifiedMeetingsTab: React.FC = () => {
         files: [],
         preparationNotes: [],
       });
-      setOjDraft(defaultOj);
     }
   };
 
@@ -215,42 +194,6 @@ export const UnifiedMeetingsTab: React.FC = () => {
     }
   };
 
-  const handleSaveOj = async () => {
-    if (!selectedDetails) return;
-    let targetFolderId = selectedDetails.folderId;
-
-    setIsSavingOj(true);
-    try {
-      // Si pas encore de dossier kDrive, on le crée d'abord !
-      if (!targetFolderId) {
-        const res = await api.createMeetingFolder({ dateStr: selectedDetails.dateStr });
-        targetFolderId = res.folder.id;
-      }
-
-      await api.saveMeetingOj(targetFolderId!, {
-        content: ojDraft,
-        meetingDate: selectedDetails.dateStr,
-      });
-      success('Ordre du jour sauvegardé et exporté en Word (.docx) sur kDrive !');
-      setIsEditingOj(false);
-      await loadMeetings();
-      selectMeeting({
-        folderId: targetFolderId!,
-        folderName: selectedDetails.folderName,
-        dateStr: selectedDetails.dateStr,
-        year: selectedDetails.year,
-        displayTitle: selectedDetails.displayTitle,
-        hasOj: true,
-        hasPv: false,
-        attachmentsCount: 1,
-        isUpcoming: selectedDetails.isUpcoming,
-      });
-    } catch (err: any) {
-      error(`Erreur sauvegarde OJ: ${err.message}`);
-    } finally {
-      setIsSavingOj(false);
-    }
-  };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -565,45 +508,40 @@ export const UnifiedMeetingsTab: React.FC = () => {
 
               {/* Barre de navigation interne (Sous-onglets) */}
               <div className="flex items-center justify-between gap-2 border-b border-slate-800 pb-2">
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={() => setActiveSubTab('both')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all ${
-                      activeSubTab === 'both'
-                        ? 'bg-indigo-600 text-white'
-                        : 'text-slate-400 hover:text-white hover:bg-slate-800'
-                    }`}
-                  >
-                    <Columns className="w-3.5 h-3.5" />
-                    <span>Vue Côte-à-Côte (OJ & PV)</span>
-                  </button>
-                  <button
-                    onClick={() => setActiveSubTab('oj')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all ${
-                      activeSubTab === 'oj'
-                        ? 'bg-indigo-600 text-white'
-                        : 'text-slate-400 hover:text-white hover:bg-slate-800'
-                    }`}
-                  >
-                    <FileText className="w-3.5 h-3.5" />
-                    <span>Ordre du Jour (OJ)</span>
-                  </button>
+                <div className="flex items-center gap-1.5">
                   <button
                     onClick={() => setActiveSubTab('pv')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all ${
+                    className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
                       activeSubTab === 'pv'
-                        ? 'bg-indigo-600 text-white'
+                        ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
                         : 'text-slate-400 hover:text-white hover:bg-slate-800'
                     }`}
                   >
                     <Edit className="w-3.5 h-3.5" />
                     <span>Procès-Verbal (PV)</span>
+                    {selectedDetails.hasPv && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-indigo-400" />
+                    )}
+                  </button>
+                  <button
+                    onClick={() => setActiveSubTab('oj')}
+                    className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                      activeSubTab === 'oj'
+                        ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
+                        : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                    }`}
+                  >
+                    <FileText className="w-3.5 h-3.5" />
+                    <span>Ordre du Jour (OJ)</span>
+                    {selectedDetails.hasOj && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                    )}
                   </button>
                   <button
                     onClick={() => setActiveSubTab('files')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all ${
+                    className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
                       activeSubTab === 'files'
-                        ? 'bg-indigo-600 text-white'
+                        ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
                         : 'text-slate-400 hover:text-white hover:bg-slate-800'
                     }`}
                   >
@@ -614,160 +552,9 @@ export const UnifiedMeetingsTab: React.FC = () => {
               </div>
 
               {/* CONTENU SELON LE MODE CHOISI */}
-              {/* MODE 1 : VUE CÔTE-À-CÔTE (EN UN COUP D'ŒIL) */}
-              {activeSubTab === 'both' && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* COLONNE GAUCHE : ORDRE DU JOUR (OJ) */}
-                  <div className="bg-slate-950/60 border border-slate-800/80 rounded-xl p-4 flex flex-col h-[650px]">
-                    <div className="flex items-center justify-between pb-3 border-b border-slate-800/80 mb-3">
-                      <div className="flex items-center gap-2">
-                        <FileText className="w-4 h-4 text-emerald-400" />
-                        <h4 className="text-sm font-semibold text-white">Ordre du Jour</h4>
-                        {selectedDetails.ojFileName && (
-                          <span className="text-[10px] text-slate-400 truncate max-w-[120px]">
-                            ({selectedDetails.ojFileName})
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          onClick={() => setIsFullscreenOj(true)}
-                          className="text-xs text-slate-400 hover:text-white flex items-center gap-1 px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 transition-all"
-                          title="Mode Plein Écran Zen (OJ)"
-                        >
-                          <Maximize2 className="w-3.5 h-3.5" />
-                          <span className="hidden sm:inline">Plein écran</span>
-                        </button>
-                        <button
-                          onClick={() => setIsEditingOj(!isEditingOj)}
-                          className="text-xs text-indigo-300 hover:text-white flex items-center gap-1 px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 transition-all"
-                        >
-                          {isEditingOj ? 'Aperçu' : 'Modifier'}
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="flex-1 overflow-y-auto pr-1 text-sm text-slate-300">
-                      {isEditingOj ? (
-                        <div className="flex flex-col h-full space-y-2">
-                          <textarea
-                            value={ojDraft}
-                            onChange={(e) => setOjDraft(e.target.value)}
-                            className="flex-1 w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-xs font-mono text-slate-200 resize-none focus:outline-none focus:border-indigo-500"
-                            placeholder="Contenu de l'Ordre du Jour..."
-                          />
-                          <button
-                            onClick={handleSaveOj}
-                            disabled={isSavingOj}
-                            className="w-full py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs flex items-center justify-center gap-2"
-                          >
-                            {isSavingOj ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileCheck className="w-3.5 h-3.5" />}
-                            Enregistrer & Compiler Word (.docx)
-                          </button>
-                        </div>
-                      ) : selectedDetails.ojContent ? (
-                        <div className="whitespace-pre-wrap font-sans text-xs leading-relaxed space-y-2 text-slate-200">
-                          {selectedDetails.ojContent}
-                        </div>
-                      ) : (
-                        <div className="flex flex-col items-center justify-center h-full text-center p-6 text-slate-400">
-                          <AlertCircle className="w-8 h-8 text-amber-400/80 mb-2" />
-                          <p className="text-xs mb-3">Aucun Ordre du Jour trouvé pour cette séance.</p>
-                          <button
-                            onClick={() => {
-                              setIsEditingOj(true);
-                              setOjDraft(generateDefaultOj(selectedDetails));
-                            }}
-                            className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-medium hover:bg-indigo-500"
-                          >
-                            Créer avec le modèle standard
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* COLONNE DROITE : PROCÈS-VERBAL (PV) AVEC ÉDITEUR RICHE */}
-                  <div className="bg-slate-950/60 border border-slate-800/80 rounded-xl p-4 flex flex-col h-[650px]">
-                    <div className="flex items-center justify-between pb-3 border-b border-slate-800/80 mb-3">
-                      <div className="flex items-center gap-2">
-                        <Edit className="w-4 h-4 text-indigo-400" />
-                        <h4 className="text-sm font-semibold text-white">Procès-Verbal</h4>
-                      </div>
-                      <span className="text-[10px] text-slate-400">Commandes / et tags @ actifs</span>
-                    </div>
-
-                    <div className="flex-1 overflow-y-auto">
-                      <RichMeetingEditor
-                        folderId={selectedDetails.folderId!}
-                        fileName={selectedDetails.pvFileName || `PV - ${selectedDetails.folderName}.md`}
-                        initialContent={selectedDetails.pvContent || `# Procès-Verbal - Séance ${selectedDetails.folderName}\n\n**Date :** ${selectedDetails.dateStr}\n**Président :** ${selectedDetails.president || 'AO'}\n**PV :** ${selectedDetails.secretary || 'JMo'}\n\n## 1. Accueil & Prière\n\n## 2. Décisions & Actions\n- [ ] `}
-                        meetingDate={selectedDetails.dateStr}
-                        docxTitle={`Procès-Verbal - ${selectedDetails.displayTitle}`}
-                        docxUrl={selectedDetails.files?.find((f) => /^pv.*\.docx$/i.test(f.name))?.kdriveUrl}
-                        ojMemoContent={selectedDetails.ojContent}
-                        onSaved={() => selectedDetails.folderId && selectMeeting(selectedDetails.folderId)}
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* MODE 2 : VUE EXCLUSIVE ORDRE DU JOUR (OJ) */}
-              {activeSubTab === 'oj' && (
-                <div className="bg-slate-950/60 border border-slate-800/80 rounded-xl p-5 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <FileText className="w-5 h-5 text-emerald-400" />
-                      <h3 className="font-semibold text-white text-base">Ordre du Jour</h3>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => setIsFullscreenOj(true)}
-                        className="px-3 py-1.5 rounded-lg text-xs font-medium text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 flex items-center gap-1.5 transition-all border border-slate-700"
-                        title="Mode Plein Écran Zen"
-                      >
-                        <Maximize2 className="w-3.5 h-3.5" />
-                        <span>Plein écran</span>
-                      </button>
-                      <button
-                        onClick={() => setIsEditingOj(!isEditingOj)}
-                        className="px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-500 flex items-center gap-1.5"
-                      >
-                        {isEditingOj ? 'Mode Lecture' : 'Modifier le contenu'}
-                      </button>
-                    </div>
-                  </div>
-
-                  {isEditingOj ? (
-                    <div className="space-y-3">
-                      <textarea
-                        value={ojDraft}
-                        onChange={(e) => setOjDraft(e.target.value)}
-                        rows={16}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-xl p-4 text-sm font-mono text-slate-200 resize-y focus:outline-none focus:border-indigo-500"
-                        placeholder="Rédigez l'Ordre du Jour..."
-                      />
-                      <button
-                        onClick={handleSaveOj}
-                        disabled={isSavingOj}
-                        className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-sm flex items-center gap-2"
-                      >
-                        {isSavingOj ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileCheck className="w-4 h-4" />}
-                        Enregistrer & Compiler Word (.docx) sur kDrive
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="p-5 bg-slate-900/50 rounded-xl border border-slate-800/60 whitespace-pre-wrap text-sm leading-relaxed text-slate-200">
-                      {selectedDetails.ojContent || 'Aucun Ordre du Jour rédigé.'}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* MODE 3 : VUE EXCLUSIVE PROCÈS-VERBAL (PV) */}
+              {/* MODE 1 : VUE EXCLUSIVE PROCÈS-VERBAL (PV) EN PLEINE LARGEUR */}
               {activeSubTab === 'pv' && (
-                <div className="bg-slate-950/60 border border-slate-800/80 rounded-xl p-5">
+                <div className="bg-slate-950/60 border border-slate-800/80 rounded-xl p-4 sm:p-5">
                   <RichMeetingEditor
                     folderId={selectedDetails.folderId!}
                     fileName={selectedDetails.pvFileName || `PV - ${selectedDetails.folderName}.md`}
@@ -776,6 +563,36 @@ export const UnifiedMeetingsTab: React.FC = () => {
                     docxTitle={`Procès-Verbal - ${selectedDetails.displayTitle}`}
                     docxUrl={selectedDetails.files?.find((f) => /^pv.*\.docx$/i.test(f.name))?.kdriveUrl}
                     ojMemoContent={selectedDetails.ojContent}
+                    onSaved={() => selectedDetails.folderId && selectMeeting(selectedDetails.folderId)}
+                  />
+                </div>
+              )}
+
+              {/* MODE 2 : VUE EXCLUSIVE ORDRE DU JOUR (OJ) EN PLEINE LARGEUR */}
+              {activeSubTab === 'oj' && (
+                <div className="bg-slate-950/60 border border-slate-800/80 rounded-xl p-4 sm:p-5">
+                  <RichMeetingEditor
+                    folderId={selectedDetails.folderId}
+                    fileName={selectedDetails.ojFileName || `OJ - ${selectedDetails.folderName}.md`}
+                    initialContent={selectedDetails.ojContent || generateDefaultOj(selectedDetails)}
+                    meetingDate={selectedDetails.dateStr}
+                    docxTitle={`Ordre du Jour - ${selectedDetails.displayTitle}`}
+                    docxUrl={selectedDetails.files?.find((f) => /^oj.*\.docx$/i.test(f.name))?.kdriveUrl}
+                    documentType="oj"
+                    onCustomSave={async (content) => {
+                      let targetFolderId = selectedDetails.folderId;
+                      if (!targetFolderId) {
+                        const res = await api.createMeetingFolder({ dateStr: selectedDetails.dateStr });
+                        targetFolderId = res.folder.id;
+                      }
+                      await api.saveMeetingOj(targetFolderId!, {
+                        content,
+                        meetingDate: selectedDetails.dateStr,
+                      });
+                      success('Ordre du jour enregistré et exporté en Word (.docx) sur kDrive !');
+                      await loadMeetings();
+                      selectMeeting(targetFolderId!);
+                    }}
                     onSaved={() => selectedDetails.folderId && selectMeeting(selectedDetails.folderId)}
                   />
                 </div>
@@ -844,78 +661,7 @@ export const UnifiedMeetingsTab: React.FC = () => {
         </div>
       </div>
 
-      {/* 3. MODALE / OVERLAY PLEIN ÉCRAN ORDRE DU JOUR (ZEN FOCUS) */}
-      {isFullscreenOj && selectedDetails && (
-        <div className="fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-md p-4 sm:p-6 flex flex-col overflow-hidden animate-fadeIn">
-          {/* Barre d'action supérieure */}
-          <div className="flex items-center justify-between pb-4 border-b border-slate-800 shrink-0">
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
-                <FileText className="w-5 h-5" />
-              </div>
-              <div>
-                <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                  <span>Ordre du Jour - {selectedDetails.displayTitle}</span>
-                  <span className="text-xs px-2 py-0.5 rounded bg-slate-800 text-indigo-300 font-mono">
-                    {selectedDetails.folderName}
-                  </span>
-                </h2>
-                <p className="text-xs text-slate-400">
-                  Mode Rédaction Zen • Appuyez sur <kbd className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-[10px] text-slate-300 font-mono">Échap</kbd> pour quitter
-                </p>
-              </div>
-            </div>
 
-            <div className="flex items-center gap-2.5">
-              <button
-                onClick={() => setIsEditingOj(!isEditingOj)}
-                className="px-3.5 py-2 rounded-xl text-xs font-medium text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 flex items-center gap-2 transition-all"
-              >
-                {isEditingOj ? <Eye className="w-4 h-4 text-slate-300" /> : <Edit className="w-4 h-4 text-slate-300" />}
-                <span>{isEditingOj ? 'Mode Lecture' : 'Modifier'}</span>
-              </button>
-
-              {isEditingOj && (
-                <button
-                  onClick={handleSaveOj}
-                  disabled={isSavingOj}
-                  className="px-4 py-2 rounded-xl text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-500 flex items-center gap-2 shadow-lg shadow-emerald-600/30 transition-all"
-                >
-                  {isSavingOj ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileCheck className="w-4 h-4" />}
-                  <span>Enregistrer & Compiler Word</span>
-                </button>
-              )}
-
-              <button
-                onClick={() => setIsFullscreenOj(false)}
-                className="p-2 rounded-xl text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 transition-all"
-                title="Quitter le plein écran (Échap)"
-              >
-                <Minimize2 className="w-5 h-5" />
-              </button>
-            </div>
-          </div>
-
-          {/* Espace central de rédaction centré et aéré */}
-          <div className="flex-1 overflow-y-auto py-6 flex justify-center">
-            <div className="w-full max-w-4xl h-full flex flex-col">
-              {isEditingOj ? (
-                <textarea
-                  value={ojDraft}
-                  onChange={(e) => setOjDraft(e.target.value)}
-                  className="flex-1 w-full bg-slate-900 border border-slate-800 rounded-2xl p-6 text-sm font-mono text-slate-100 placeholder-slate-500 resize-none focus:outline-none focus:border-indigo-500 shadow-2xl leading-relaxed"
-                  placeholder="Rédigez l'Ordre du Jour..."
-                  autoFocus
-                />
-              ) : (
-                <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-8 whitespace-pre-wrap font-sans text-sm leading-relaxed text-slate-200 shadow-xl overflow-y-auto">
-                  {selectedDetails.ojContent || 'Aucun Ordre du Jour rédigé.'}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* MODALE CRÉATION DOSSIER DE SÉANCE */}
       {showCreateModal && (
