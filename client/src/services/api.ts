@@ -1,4 +1,4 @@
-import { Meeting, Note, Task, Person, KDriveFile, SystemStatus } from '../types';
+import { Meeting, Note, Task, Person, KDriveFile, SystemStatus, KDriveSession, CommitteeMember, MeetingSummary, MeetingDetails } from '../types';
 
 let authToken: string | null = localStorage.getItem('cp_board_auth_token');
 
@@ -69,10 +69,76 @@ export const api = {
     return res;
   },
 
-  // Réunions (ChurchTools + kDrive)
+  // Réunions unifiées (dossiers CP MM.DD kDrive + ChurchTools)
+  async getMeetingsList(year = 2026): Promise<MeetingSummary[]> {
+    const res = await customFetch(`/api/meetings?year=${year}`);
+    return res.meetings || [];
+  },
+
+  async getMeetingDetails(folderId: string | number): Promise<MeetingDetails> {
+    const res = await customFetch(`/api/meetings/${folderId}`);
+    return res.details;
+  },
+
+  async createMeetingFolder(payload: { dateStr: string; topic?: string }): Promise<{ success: boolean; folder: any }> {
+    return customFetch('/api/meetings/create-folder', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async saveMeetingOj(folderId: string | number, payload: { content: string; meetingDate?: string }): Promise<{ success: boolean; docxFile: any }> {
+    return customFetch(`/api/meetings/${folderId}/save-oj`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async saveMeetingPv(
+    folderId: string | number,
+    payload: { content: string; meetingDate?: string; docxTitle?: string; syncTasks?: boolean }
+  ): Promise<{ success: boolean; docxFile: any; syncedTaskCount: number }> {
+    return customFetch(`/api/meetings/${folderId}/save-pv`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async uploadAttachment(folderId: string | number, file: File): Promise<{ success: boolean; file: any }> {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('folderId', String(folderId));
+
+    const headers: Record<string, string> = {};
+    if (authToken) {
+      headers['Authorization'] = `Bearer ${authToken}`;
+    }
+
+    const response = await fetch('/api/files/upload', {
+      method: 'POST',
+      headers,
+      body: formData,
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || 'Erreur lors du téléversement');
+    }
+    return data;
+  },
+
+  // Anciennes méthodes de compatibilité
   async getUpcomingMeetings(refresh = false): Promise<Meeting[]> {
     const res = await customFetch(`/api/meetings/upcoming${refresh ? '?refresh=true' : ''}`);
     return res.meetings || [];
+  },
+
+  async getSessions(): Promise<KDriveSession[]> {
+    const res = await customFetch('/api/meetings/sessions');
+    return res.sessions || [];
   },
 
   async initMeeting(payload: {
@@ -199,6 +265,26 @@ export const api = {
       throw new Error(data.error || 'Erreur lors du téléversement');
     }
     return data;
+  },
+
+  async getCommitteeMembers(): Promise<CommitteeMember[]> {
+    const res = await customFetch('/api/churchtools/members');
+    return res.members || [];
+  },
+
+  async saveAndExportDocx(payload: {
+    folderId: string | number;
+    fileName?: string;
+    content: string;
+    docxTitle?: string;
+    meetingDate?: string;
+    syncTasks?: boolean;
+  }): Promise<any> {
+    return customFetch('/api/files/save-and-export-docx', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
   },
 
   // ChurchTools Persons & Follow-ups

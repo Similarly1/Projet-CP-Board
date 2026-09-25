@@ -1,9 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Navbar } from './components/Navbar';
-import { DashboardTab } from './components/DashboardTab';
-import { PreparationTab } from './components/PreparationTab';
-import { MeetingSessionTab } from './components/MeetingSessionTab';
+import { UnifiedMeetingsTab } from './components/UnifiedMeetingsTab';
 import { TasksTab } from './components/TasksTab';
+import { DashboardTab } from './components/DashboardTab';
 import { FollowUpModal } from './components/FollowUpModal';
 import { PreparationModal } from './components/PreparationModal';
 import { AuthModal } from './components/AuthModal';
@@ -15,7 +14,7 @@ import { AlertCircle, RefreshCw } from 'lucide-react';
 const AppContent: React.FC = () => {
   const { error } = useToast();
 
-  const [activeTab, setActiveTab] = useState<'overview' | 'prep' | 'session' | 'tasks'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'meetings' | 'tasks'>('overview');
   const [selectedMeetingDate, setSelectedMeetingDate] = useState<string | undefined>(undefined);
 
   // Données globales
@@ -111,10 +110,10 @@ const AppContent: React.FC = () => {
   const handlePrepSuccess = (dateStr: string) => {
     refreshAll();
     setSelectedMeetingDate(dateStr);
-    setActiveTab('prep');
+    setActiveTab('meetings');
   };
 
-  const handleNavigateTab = (tab: 'overview' | 'prep' | 'session' | 'tasks', meetingDate?: string) => {
+  const handleNavigateTab = (tab: 'meetings' | 'tasks' | 'overview', meetingDate?: string) => {
     if (meetingDate) {
       setSelectedMeetingDate(meetingDate);
     }
@@ -152,51 +151,32 @@ const AppContent: React.FC = () => {
           </div>
         )}
 
-        {/* Tab 1 : Vue d'ensemble */}
+        {/* Tab 1 : Séances (OJ & PV) - Vue Unifiée */}
+        {activeTab === 'meetings' && (
+          <UnifiedMeetingsTab />
+        )}
+
+        {/* Tab 2 : Tâches Administratives */}
+        {activeTab === 'tasks' && (
+          <TasksTab
+            tasks={tasks}
+            onRefreshTasks={refreshTasks}
+            isLoading={isTasksLoading}
+          />
+        )}
+
+        {/* Tab 3 : Vue d'ensemble */}
         {activeTab === 'overview' && (
           <DashboardTab
             meetings={meetings}
             tasks={tasks}
             notes={notes}
             onOpenPrepModal={handleOpenPrepModal}
-            onNavigateTab={handleNavigateTab}
+            onNavigateTab={(tab) => {
+              if (tab === 'tasks') setActiveTab('tasks');
+              else setActiveTab('meetings');
+            }}
             onOpenFollowUp={() => setIsFollowUpOpen(true)}
-          />
-        )}
-
-        {/* Tab 2 : Préparation & ODJ */}
-        {activeTab === 'prep' && (
-          <PreparationTab
-            meetings={meetings}
-            notes={notes}
-            selectedMeetingDate={selectedMeetingDate}
-            onRefreshMeetings={refreshAll}
-            onRefreshNotes={async () => {
-              const res = await api.getPendingNotes();
-              setNotes(res);
-            }}
-            onNavigateToSession={(dateStr) => {
-              setSelectedMeetingDate(dateStr);
-              setActiveTab('session');
-            }}
-          />
-        )}
-
-        {/* Tab 3 : Séance & PV */}
-        {activeTab === 'session' && (
-          <MeetingSessionTab
-            meetings={meetings}
-            selectedMeetingDate={selectedMeetingDate}
-            onRefreshMeetings={refreshAll}
-          />
-        )}
-
-        {/* Tab 4 : Tâches Administratives */}
-        {activeTab === 'tasks' && (
-          <TasksTab
-            tasks={tasks}
-            onRefreshTasks={refreshTasks}
-            isLoading={isTasksLoading}
           />
         )}
 

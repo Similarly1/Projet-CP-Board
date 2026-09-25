@@ -29,6 +29,16 @@ export interface ChurchToolsPerson {
   imageUrl?: string;
 }
 
+export interface CommitteeMember {
+  id: number;
+  firstName: string;
+  lastName: string;
+  displayName: string;
+  mentionName: string;
+  role?: string;
+  email?: string;
+}
+
 export class ChurchToolsService {
   private get client(): AxiosInstance {
     if (!config.churchTools.baseUrl || !config.churchTools.token) {
@@ -58,37 +68,84 @@ export class ChurchToolsService {
     const todayStr = new Date().toISOString().split('T')[0];
     
     try {
-      // Endpoint standard ChurchTools: GET /api/events?from=YYYY-MM-DD&direction=forward&limit=25
-      const response = await this.client.get('/api/events', {
-        params: {
-          from: todayStr,
-          direction: 'forward',
-          limit: 30,
-        },
-      });
-
-      const eventsData = response.data?.data || response.data || [];
+      const calendarId = config.churchTools.calendarId;
       const meetings: ChurchToolsMeeting[] = [];
 
-      for (const item of eventsData) {
-        // Filtrage éventuel par nom de groupe / calendrier ou prise en compte des réunions du comité
-        const title = item.name || item.title || 'Séance';
-        const startDate = item.startDate || item.start || item.appointment?.startDate;
-        const endDate = item.endDate || item.end || item.appointment?.endDate;
-        const location = item.location || item.appointment?.address || '';
-        const description = item.description || item.appointment?.description || '';
-        const calendarName = item.calendar?.name || '';
-
-        if (startDate) {
-          meetings.push({
-            id: item.id || `${startDate}_${title}`,
-            title,
-            startDate,
-            endDate,
-            location,
-            description,
-            calendarName,
+      if (calendarId) {
+        try {
+          // Requête directe sur le calendrier du comité (ID 4: CP & EMP • CE & EMS)
+          const nextYearStr = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+          const apptResponse = await this.client.get(`/api/calendars/${calendarId}/appointments`, {
+            params: {
+              from: todayStr,
+              to: nextYearStr,
+            },
           });
+
+          const apptData = apptResponse.data?.data || [];
+          for (const item of apptData) {
+            const base = item.base || item.appointment?.base || {};
+            const calc = item.calculated || item.appointment?.calculated || {};
+            const title = base.title || base.caption || item.title || 'Séance Comité';
+            const startDate = calc.startDate || base.startDate;
+            const endDate = calc.endDate || base.endDate;
+            let location = '';
+            const rawLoc = base.address || base.location || item.appointment?.address || item.appointment?.location;
+            if (typeof rawLoc === 'string') {
+              location = rawLoc;
+            } else if (rawLoc && typeof rawLoc === 'object') {
+              location = rawLoc.name || rawLoc.meetingAt || rawLoc.street || '';
+              if (rawLoc.city) location += ` (${rawLoc.city})`;
+            }
+            const description = base.description || base.subtitle || '';
+
+            if (startDate) {
+              meetings.push({
+                id: base.id || item.id || `${startDate}_${title}`,
+                title,
+                startDate,
+                endDate,
+                location,
+                description,
+                calendarName: 'CP & EMP • CE & EMS',
+              });
+            }
+          }
+        } catch (e: any) {
+          console.warn('Erreur récupération appointments calendrier:', e.message);
+        }
+      }
+
+      // Si aucun rdv trouvé via appointments ou pas de calendrier configuré, fallback sur /api/events
+      if (meetings.length === 0) {
+        const response = await this.client.get('/api/events', {
+          params: {
+            from: todayStr,
+            direction: 'forward',
+            limit: 30,
+          },
+        });
+
+        const eventsData = response.data?.data || response.data || [];
+        for (const item of eventsData) {
+          const title = item.name || item.title || 'Séance';
+          const startDate = item.startDate || item.start || item.appointment?.startDate;
+          const endDate = item.endDate || item.end || item.appointment?.endDate;
+          const location = item.location || item.appointment?.address || '';
+          const description = item.description || item.appointment?.description || '';
+          const calendarName = item.calendar?.name || '';
+
+          if (startDate) {
+            meetings.push({
+              id: item.id || `${startDate}_${title}`,
+              title,
+              startDate,
+              endDate,
+              location,
+              description,
+              calendarName,
+            });
+          }
         }
       }
 
@@ -101,6 +158,49 @@ export class ChurchToolsService {
     } catch (err: any) {
       console.error('Erreur lors de la récupération des réunions ChurchTools:', err.response?.data || err.message);
       throw new Error(`Erreur ChurchTools API: ${err.response?.data?.message || err.message}`);
+    }
+  }
+
+  /**
+   * Récupère les membres officiels du groupe comité (CP)
+   */
+  async getCommitteeMembers(): Promise<CommitteeMember[]> {
+    const groupId = config.churchTools.committeeGroupId;
+    if (!groupId) return [];
+
+    const cacheKey = 'churchtools_committee_members';
+    const cached = cacheService.get<CommitteeMember[]>(cacheKey);
+    if (cached) return cached;
+
+    try {
+      const res = await this.client.get(`/api/groups/${groupId}/members`);
+      const data = res.data?.data || [];
+      const members: CommitteeMember[] = [];
+
+      for (const m of data) {
+        const p = m.person || {};
+        const personId = m.personId || p.id || m.id;
+        const firstName = p.domainAttributes?.firstName || p.firstName || '';
+        const lastName = p.domainAttributes?.lastName || p.lastName || '';
+        const fullName = (p.title || `${firstName} ${lastName}`).trim() || `Membre #${personId}`;
+        const firstPart = firstName || fullName.split(' ')[0] || fullName;
+
+        members.push({
+          id: personId,
+          firstName,
+          lastName,
+          displayName: fullName,
+          mentionName: firstPart.replace(/\s+/g, '-'),
+          role: m.groupTypeRole?.name || m.role,
+          email: p.domainAttributes?.email || p.email,
+        });
+      }
+
+      cacheService.set(cacheKey, members, 60 * 60 * 1000);
+      return members;
+    } catch (err: any) {
+      console.error('Erreur getCommitteeMembers:', err.message);
+      return [];
     }
   }
 
@@ -126,8 +226,11 @@ export class ChurchToolsService {
         isArchived: Boolean(n.isArchived || n.archived),
       })).filter((n: ChurchToolsNote) => !n.isArchived);
     } catch (err: any) {
-      console.error('Erreur lors de la récupération des notes de groupe ChurchTools:', err.response?.data || err.message);
-      throw new Error(`Erreur ChurchTools API (Notes): ${err.response?.data?.message || err.message}`);
+      if (err.response?.status === 404) {
+        return [];
+      }
+      console.warn('Erreur lors de la récupération des notes de groupe ChurchTools:', err.response?.data?.message || err.message);
+      return [];
     }
   }
 

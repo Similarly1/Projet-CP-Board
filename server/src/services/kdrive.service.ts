@@ -1,5 +1,6 @@
 import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
 import FormData from 'form-data';
+import mammoth from 'mammoth';
 import { config } from '../config';
 
 export interface KDriveItem {
@@ -68,6 +69,10 @@ export class KDriveService {
     return config.kDrive.rootFolderId;
   }
 
+  get reunionsFolderId(): number {
+    return config.kDrive.reunionsFolderId;
+  }
+
   /**
    * Liste les fichiers et dossiers dans un dossier parent
    */
@@ -134,26 +139,25 @@ export class KDriveService {
   }
 
   /**
-   * Téléverse un fichier (ou crée/écrase un fichier Markdown)
+   * Téléverse un fichier (ou crée/écrase un fichier Markdown / Docx)
    */
   async uploadFile(
     parentFolderId: number | string,
     fileName: string,
     fileBuffer: Buffer,
-    mimeType = 'text/markdown'
+    mimeType = 'application/octet-stream'
   ): Promise<KDriveItem> {
     try {
-      const form = new FormData();
-      form.append('file', fileBuffer, {
-        filename: fileName,
-        contentType: mimeType,
+      const params = new URLSearchParams({
+        directory_id: String(parentFolderId),
+        file_name: fileName,
+        total_size: String(fileBuffer.length),
       });
-      form.append('directory_id', String(parentFolderId));
-      form.append('conflict_action', 'replace'); // Écrase si existe déjà
 
-      const response = await this.client.post(`/drive/${this.driveId}/files/upload`, form, {
+      // API kDrive v3 officielle : POST /drive/{driveId}/upload?... avec octet-stream
+      const response = await this.client.post(`/drive/${this.driveId}/upload?${params.toString()}`, fileBuffer, {
         headers: {
-          ...form.getHeaders(),
+          'Content-Type': 'application/octet-stream',
         },
         maxContentLength: Infinity,
         maxBodyLength: Infinity,
@@ -169,7 +173,7 @@ export class KDriveService {
       };
     } catch (err: any) {
       console.error(`Erreur upload fichier kDrive (${fileName}):`, err.response?.data || err.message);
-      throw new Error(`Erreur kDrive (Upload): ${err.response?.data?.message || err.message}`);
+      throw new Error(`Erreur kDrive (Upload): ${err.response?.data?.message || err.response?.data?.error?.description || err.message}`);
     }
   }
 
@@ -190,8 +194,11 @@ export class KDriveService {
    */
   async getFileTextContent(fileId: number | string): Promise<string> {
     try {
-      // GET /drive/{driveId}/files/{fileId}/download
-      const response = await this.client.get(`/drive/${this.driveId}/files/${fileId}/download`, {
+      // API kDrive officielle: GET /2/drive/{driveId}/files/{fileId}/download
+      const response = await axios.get(`https://api.infomaniak.com/2/drive/${this.driveId}/files/${fileId}/download`, {
+        headers: {
+          Authorization: `Bearer ${config.kDrive.token}`,
+        },
         responseType: 'text',
         transformResponse: [(data) => data],
       });
@@ -206,6 +213,56 @@ export class KDriveService {
   /**
    * Met à jour le contenu d'un fichier existant
    */
+  /**
+   * Extrait le texte d'un document Word (.docx) sur kDrive
+   */
+  async getDocxTextContent(fileId: number | string): Promise<string> {
+    try {
+      const response = await axios.get(`https://api.infomaniak.com/2/drive/${this.driveId}/files/${fileId}/download`, {
+        headers: {
+          Authorization: `Bearer ${config.kDrive.token}`,
+        },
+        responseType: 'arraybuffer',
+      });
+      const result = await mammoth.extractRawText({ buffer: Buffer.from(response.data) });
+      return result.value || '';
+    } catch (err: any) {
+      console.error(`Erreur extraction docx kDrive (${fileId}):`, err.response?.data || err.message);
+      throw new Error(`Erreur kDrive (Lecture Word): ${err.response?.data?.message || err.message}`);
+    }
+  }
+
+  /**
+   * Trouve le dossier kDrive pour une séance (ex: CP 09.24 pour 2026-09-24)
+   */
+  async findMeetingFolder(dateStr: string, yearFolderId: number = this.rootFolderId): Promise<KDriveItem | null> {
+    const items = await this.listFiles(yearFolderId);
+    const parts = dateStr.split('-');
+    if (parts.length < 3) return null;
+    const [, month, day] = parts;
+    const prefix = `CP ${month}.${day}`.toLowerCase();
+    return items.find((item) => item.type === 'dir' && item.name.toLowerCase().startsWith(prefix)) || null;
+  }
+
+  /**
+   * Crée un dossier de séance au format officiel : CP MM.DD (ex: CP 09.28)
+   */
+  async createMeetingFolder(dateStr: string, topic?: string, yearFolderId: number = this.rootFolderId): Promise<KDriveItem> {
+    const parts = dateStr.split('-');
+    if (parts.length < 3) {
+      throw new Error('Date invalide (format attendu: YYYY-MM-DD)');
+    }
+    const [, month, day] = parts;
+    let folderName = `CP ${month}.${day}`;
+    if (topic && topic.trim()) {
+      folderName += ` - ${topic.trim()}`;
+    }
+    return this.createDirectory(yearFolderId, folderName);
+  }
+
+  /**
+   * Met à jour le contenu d'un fichier existant
+   */
   async updateFileContent(
     parentFolderId: number | string,
     fileId: number | string,
@@ -213,8 +270,6 @@ export class KDriveService {
     content: string
   ): Promise<KDriveItem> {
     const buffer = Buffer.from(content, 'utf-8');
-    
-    // Tente l'upload avec remplacement dans le dossier parent
     return this.uploadFile(parentFolderId, fileName, buffer, 'text/markdown');
   }
 }

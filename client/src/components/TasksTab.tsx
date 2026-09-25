@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   CheckSquare,
   Plus,
@@ -14,7 +14,7 @@ import {
   Loader2,
   Tag
 } from 'lucide-react';
-import { Task } from '../types';
+import { Task, CommitteeMember } from '../types';
 import { api } from '../services/api';
 import { useToast } from './Toast';
 
@@ -36,6 +36,13 @@ export const TasksTab: React.FC<TasksTabProps> = ({
   const [filterAssignee, setFilterAssignee] = useState<string>('all');
   const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
 
+  // Membres officiels du CP
+  const [members, setMembers] = useState<CommitteeMember[]>([]);
+
+  useEffect(() => {
+    api.getCommitteeMembers().then(setMembers).catch(console.error);
+  }, []);
+
   // Modal d'ajout de tâche
   const [showAddModal, setShowAddModal] = useState(false);
   const [newTitle, setNewTitle] = useState('');
@@ -44,10 +51,12 @@ export const TasksTab: React.FC<TasksTabProps> = ({
   const [newRefMeeting, setNewRefMeeting] = useState('');
   const [isAdding, setIsAdding] = useState(false);
 
-  // Liste des assignés distincts pour les filtres
-  const assignees = Array.from(
+  // Liste des assignés distincts pour les filtres (fusionnée avec les membres du CP)
+  const taskAssignees = Array.from(
     new Set(tasks.map((t) => t.assignee).filter(Boolean) as string[])
-  ).sort();
+  );
+  const memberMentions = members.map((m) => m.mentionName);
+  const allAssignees = Array.from(new Set([...memberMentions, ...taskAssignees])).sort();
 
   // Filtrage des tâches
   const filteredTasks = tasks.filter((t) => {
@@ -255,7 +264,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({
           >
             <option value="all">Tous les responsables</option>
             <option value="unassigned">Non assignées</option>
-            {assignees.map((a) => (
+            {allAssignees.map((a) => (
               <option key={a} value={a}>
                 @{a}
               </option>
@@ -504,6 +513,30 @@ export const TasksTab: React.FC<TasksTabProps> = ({
                   placeholder="Adrien (le @ sera ajouté automatiquement)"
                   className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 />
+
+                {/* Boutons rapides membres du CP */}
+                {members.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                    <span className="text-[10px] text-slate-400 font-semibold mr-1">Membres CP :</span>
+                    {members.map((m) => {
+                      const isSelected = newAssignee.toLowerCase() === m.mentionName.toLowerCase();
+                      return (
+                        <button
+                          key={m.id}
+                          type="button"
+                          onClick={() => setNewAssignee(m.mentionName)}
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-medium transition-colors ${
+                            isSelected
+                              ? 'bg-emerald-600 text-white font-bold'
+                              : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                          }`}
+                        >
+                          @{m.mentionName}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-3">

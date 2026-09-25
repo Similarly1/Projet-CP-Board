@@ -4,6 +4,19 @@ import { churchToolsService } from '../services/churchtools.service';
 const router = Router();
 
 /**
+ * GET /api/churchtools/members
+ * Récupère les membres officiels du groupe comité (CP)
+ */
+router.get('/members', async (req, res) => {
+  try {
+    const members = await churchToolsService.getCommitteeMembers();
+    res.json({ members });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
  * GET /api/churchtools/persons?q=
  * Recherche de personnes pour l'autocomplétion
  */

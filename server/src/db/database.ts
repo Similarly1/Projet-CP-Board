@@ -77,19 +77,26 @@ export const cacheService = {
   },
 };
 
+export interface MeetingFolderRecord {
+  meeting_date: string;
+  folder_id: string;
+  folder_name: string;
+  folder_url?: string;
+  odj_file_id?: string;
+  odj_name?: string;
+  odj_url?: string;
+  pv_file_id?: string;
+  pv_name?: string;
+  pv_url?: string;
+  created_at?: number;
+}
+
 export const meetingDbService = {
-  getByDate(meetingDate: string) {
-    return db.prepare('SELECT * FROM meeting_folders WHERE meeting_date = ?').get(meetingDate) as {
-      meeting_date: string;
-      folder_id: string;
-      folder_name: string;
-      odj_file_id?: string;
-      pv_file_id?: string;
-      created_at: number;
-    } | undefined;
+  getByDate(meetingDate: string): MeetingFolderRecord | undefined {
+    return db.prepare('SELECT * FROM meeting_folders WHERE meeting_date = ?').get(meetingDate) as MeetingFolderRecord | undefined;
   },
 
-  save(data: { meeting_date: string; folder_id: string; folder_name: string; odj_file_id?: string; pv_file_id?: string }) {
+  save(data: MeetingFolderRecord) {
     const stmt = db.prepare(`
       INSERT INTO meeting_folders (meeting_date, folder_id, folder_name, odj_file_id, pv_file_id, created_at)
       VALUES (?, ?, ?, ?, ?, ?)

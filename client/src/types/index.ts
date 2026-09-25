@@ -10,10 +10,50 @@ export interface Meeting {
   kDrive: {
     folderId?: string | number;
     folderName?: string;
+    folderUrl?: string;
     hasFolder: boolean;
     odjFileId?: string | number;
+    odjName?: string;
+    odjUrl?: string;
+    odjIsDocx?: boolean;
     pvFileId?: string | number;
+    pvName?: string;
+    pvUrl?: string;
+    pvIsDocx?: boolean;
   };
+}
+
+export interface KDriveSession {
+  id: number | string;
+  name: string;
+  kdriveUrl: string;
+  fileCount: number;
+  odj?: {
+    id: number | string;
+    name: string;
+    kdriveUrl: string;
+    isDocx: boolean;
+    isPdf: boolean;
+    isMd: boolean;
+  } | null;
+  pv?: {
+    id: number | string;
+    name: string;
+    kdriveUrl: string;
+    isDocx: boolean;
+    isPdf: boolean;
+    isMd: boolean;
+  } | null;
+}
+
+export interface CommitteeMember {
+  id: number;
+  firstName: string;
+  lastName: string;
+  displayName: string;
+  mentionName: string;
+  role?: string;
+  email?: string;
 }
 
 export interface Note {
@@ -76,4 +116,31 @@ export interface SystemStatus {
     path: string;
   };
   serverTime: string;
+}
+
+export interface MeetingSummary {
+  folderId?: number | string;
+  folderName: string;
+  dateStr: string;
+  year: number;
+  displayTitle: string;
+  hasOj: boolean;
+  ojFileId?: number | string;
+  ojFileName?: string;
+  hasPv: boolean;
+  pvFileId?: number | string;
+  pvFileName?: string;
+  president?: string;
+  secretary?: string;
+  attachmentsCount: number;
+  churchToolsAppointment?: any;
+  isUpcoming: boolean;
+  kdriveUrl?: string;
+}
+
+export interface MeetingDetails extends MeetingSummary {
+  ojContent: string;
+  pvContent: string;
+  files: KDriveFile[];
+  preparationNotes: { id: number; text: string; authorName?: string; createdAt?: string }[];
 }

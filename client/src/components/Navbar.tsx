@@ -15,8 +15,8 @@ import {
 import { SystemStatus } from '../types';
 
 interface NavbarProps {
-  activeTab: 'overview' | 'prep' | 'session' | 'tasks';
-  setActiveTab: (tab: 'overview' | 'prep' | 'session' | 'tasks') => void;
+  activeTab: 'meetings' | 'tasks' | 'overview';
+  setActiveTab: (tab: 'meetings' | 'tasks' | 'overview') => void;
   status: SystemStatus | null;
   onRefresh: () => void;
   isRefreshing: boolean;
@@ -62,48 +62,36 @@ export const Navbar: React.FC<NavbarProps> = ({
               onClick={() => setActiveTab('overview')}
               className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
                 activeTab === 'overview'
-                  ? 'bg-brand-600/20 text-brand-300 border border-brand-500/30 shadow-sm'
+                  ? 'bg-indigo-600/25 text-indigo-300 border border-indigo-500/40 shadow-sm'
                   : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
               }`}
             >
-              <LayoutDashboard className="w-4 h-4" />
-              <span className="hidden md:inline">Vue d'ensemble</span>
+              <LayoutDashboard className="w-4 h-4 text-sky-400" />
+              <span>Vue d'ensemble</span>
             </button>
 
             <button
-              onClick={() => setActiveTab('prep')}
+              onClick={() => setActiveTab('meetings')}
               className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
-                activeTab === 'prep'
-                  ? 'bg-brand-600/20 text-brand-300 border border-brand-500/30 shadow-sm'
+                activeTab === 'meetings'
+                  ? 'bg-indigo-600/25 text-indigo-300 border border-indigo-500/40 shadow-sm'
                   : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
               }`}
             >
-              <Calendar className="w-4 h-4" />
-              <span className="hidden md:inline">Préparation & ODJ</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('session')}
-              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
-                activeTab === 'session'
-                  ? 'bg-brand-600/20 text-brand-300 border border-brand-500/30 shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-              }`}
-            >
-              <FileText className="w-4 h-4" />
-              <span className="hidden md:inline">Séance & PV</span>
+              <Calendar className="w-4 h-4 text-indigo-400" />
+              <span className="font-semibold">Séances (OJ & PV)</span>
             </button>
 
             <button
               onClick={() => setActiveTab('tasks')}
               className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
                 activeTab === 'tasks'
-                  ? 'bg-brand-600/20 text-brand-300 border border-brand-500/30 shadow-sm'
+                  ? 'bg-indigo-600/25 text-indigo-300 border border-indigo-500/40 shadow-sm'
                   : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
               }`}
             >
-              <CheckSquare className="w-4 h-4" />
-              <span className="hidden md:inline">Tâches Comité</span>
+              <CheckSquare className="w-4 h-4 text-emerald-400" />
+              <span>Tâches Comité</span>
             </button>
           </nav>
 

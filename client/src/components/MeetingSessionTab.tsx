@@ -10,11 +10,14 @@ import {
   Calendar,
   CheckCircle2,
   FolderOpen,
-  Paperclip
+  Paperclip,
+  FileCode,
+  FileType
 } from 'lucide-react';
-import { Meeting, KDriveFile } from '../types';
+import { Meeting, KDriveFile, KDriveSession } from '../types';
 import { api } from '../services/api';
 import { useToast } from './Toast';
+import { RichMeetingEditor } from './RichMeetingEditor';
 
 interface MeetingSessionTabProps {
   meetings: Meeting[];
@@ -29,11 +32,12 @@ export const MeetingSessionTab: React.FC<MeetingSessionTabProps> = ({
 }) => {
   const { success, error } = useToast();
   
-  const [currentDate, setCurrentDate] = useState<string>(
-    selectedMeetingDate || meetings[0]?.dateStr || new Date().toISOString().split('T')[0]
-  );
+  // Sessions kDrive complètes (y compris historique 2026 : CP 09.24, CP 09.03...)
+  const [sessions, setSessions] = useState<KDriveSession[]>([]);
+  const [loadingSessions, setLoadingSessions] = useState(false);
 
-  const activeMeeting = meetings.find((m) => m.dateStr === currentDate) || null;
+  // Identifiant ou date de la séance sélectionnée
+  const [selectedSessionId, setSelectedSessionId] = useState<string>('');
 
   // PV state
   const [pvContent, setPvContent] = useState<string>('');
@@ -48,23 +52,71 @@ export const MeetingSessionTab: React.FC<MeetingSessionTabProps> = ({
   const [isUploading, setIsUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
 
-  useEffect(() => {
-    if (selectedMeetingDate) {
-      setCurrentDate(selectedMeetingDate);
+  // Charger toutes les séances depuis kDrive
+  const fetchSessions = async () => {
+    setLoadingSessions(true);
+    try {
+      const data = await api.getSessions();
+      setSessions(data);
+      if (data.length > 0 && !selectedSessionId) {
+        setSelectedSessionId(String(data[0].id));
+      }
+    } catch (e: any) {
+      console.error('Erreur chargement séances kDrive:', e);
+    } finally {
+      setLoadingSessions(false);
     }
-  }, [selectedMeetingDate]);
+  };
 
-  // Charger le contenu du PV s'il existe
   useEffect(() => {
-    const fetchPv = async () => {
-      if (activeMeeting?.kDrive?.pvFileId) {
+    fetchSessions();
+  }, []);
+
+  // Déterminer la séance active (soit par son ID de dossier kDrive, soit par sa date)
+  const activeSession = sessions.find((s) => String(s.id) === selectedSessionId) || sessions[0] || null;
+  const activeMeeting = meetings.find((m) => activeSession && m.kDrive?.folderId && String(m.kDrive.folderId) === String(activeSession.id)) || null;
+
+  // Charger les fichiers du dossier de la séance active
+  const loadFolderFiles = async () => {
+    if (!activeSession) return;
+    setLoadingFiles(true);
+    try {
+      const fileList = await api.getFolderFiles(activeSession.id);
+      setFiles(fileList);
+    } catch (e) {
+      console.error('Erreur chargement annexes:', e);
+    } finally {
+      setLoadingFiles(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeSession) {
+      loadFolderFiles();
+    }
+  }, [activeSession?.id]);
+
+  // Fichiers PV et ODJ de la séance active
+  const pvFile = activeSession?.pv || files.find((f) => f.name.toLowerCase().includes('pv')) || null;
+  const odjFile = activeSession?.odj || files.find((f) => {
+    const n = f.name.toLowerCase();
+    return n.includes('ordre_du_jour') || n.includes('odj') || n.startsWith('oj');
+  }) || null;
+
+  const isPvDocx = pvFile && /\.(docx?)$/i.test(pvFile.name);
+  const isPvMd = pvFile && /\.md$/i.test(pvFile.name);
+
+  // Charger le contenu Markdown s'il y a un PV Markdown
+  useEffect(() => {
+    const fetchPvMd = async () => {
+      if (pvFile && isPvMd) {
         setLoadingPv(true);
         try {
-          const content = await api.getFileContent(activeMeeting.kDrive.pvFileId);
+          const content = await api.getFileContent(pvFile.id);
           setPvContent(content);
           setHasUnsavedChanges(false);
         } catch (e: any) {
-          console.error('Erreur lecture PV:', e);
+          console.error('Erreur lecture PV Markdown:', e);
         } finally {
           setLoadingPv(false);
         }
@@ -74,67 +126,20 @@ export const MeetingSessionTab: React.FC<MeetingSessionTabProps> = ({
       }
     };
 
-    fetchPv();
-  }, [activeMeeting?.kDrive?.pvFileId]);
+    fetchPvMd();
+  }, [pvFile?.id, isPvMd]);
 
-  // Charger les pièces jointes du dossier de séance
-  const loadFolderFiles = async () => {
-    if (activeMeeting?.kDrive?.folderId) {
-      setLoadingFiles(true);
-      try {
-        const fileList = await api.getFolderFiles(activeMeeting.kDrive.folderId);
-        setFiles(fileList);
-      } catch (e) {
-        console.error('Erreur chargement annexes:', e);
-      } finally {
-        setLoadingFiles(false);
-      }
-    } else {
-      setFiles([]);
-    }
-  };
-
-  useEffect(() => {
-    loadFolderFiles();
-  }, [activeMeeting?.kDrive?.folderId]);
-
-  // Démarrer le PV (clonage ODJ)
-  const handleStartPv = async () => {
-    if (!activeMeeting?.kDrive?.folderId) {
-      error("Le dossier de la séance n'est pas encore initialisé. Veuillez d'abord préparer la séance.");
-      return;
-    }
-
-    setIsStartingPv(true);
-    try {
-      const res = await api.startPv({
-        meetingDate: currentDate,
-        folderId: activeMeeting.kDrive.folderId,
-      });
-
-      success(res.alreadyExisted ? 'Procès-verbal chargé !' : 'Procès-verbal initialisé depuis l ODJ !');
-      setPvContent(res.content);
-      setHasUnsavedChanges(false);
-      onRefreshMeetings();
-      loadFolderFiles();
-    } catch (err: any) {
-      error(err.message || 'Erreur lors du démarrage du PV');
-    } finally {
-      setIsStartingPv(false);
-    }
-  };
-
-  // Enregistrer le PV sur kDrive
+  // Sauvegarder le PV Markdown
   const handleSavePv = async () => {
-    if (!activeMeeting?.kDrive?.pvFileId) return;
+    if (!pvFile || !activeSession) return;
 
     setSavingPv(true);
     try {
       await api.saveFileContent({
-        fileId: activeMeeting.kDrive.pvFileId,
+        fileId: pvFile.id,
         content: pvContent,
-        parentFolderId: activeMeeting.kDrive.folderId,
-        fileName: `${currentDate}_PV.md`,
+        parentFolderId: activeSession.id,
+        fileName: pvFile.name,
       });
 
       success('Procès-verbal enregistré sur kDrive !');
@@ -149,8 +154,8 @@ export const MeetingSessionTab: React.FC<MeetingSessionTabProps> = ({
   // Téléversement d'un fichier annexe
   const handleFileUpload = async (fileList: FileList | null) => {
     if (!fileList || fileList.length === 0) return;
-    if (!activeMeeting?.kDrive?.folderId) {
-      error('Dossier kDrive non initialisé.');
+    if (!activeSession) {
+      error('Dossier kDrive non sélectionné.');
       return;
     }
 
@@ -158,9 +163,10 @@ export const MeetingSessionTab: React.FC<MeetingSessionTabProps> = ({
     setIsUploading(true);
 
     try {
-      await api.uploadFile(activeMeeting.kDrive.folderId, file);
+      await api.uploadFile(activeSession.id, file);
       success(`Fichier "${file.name}" téléversé avec succès sur kDrive !`);
       loadFolderFiles();
+      fetchSessions();
     } catch (err: any) {
       error(err.message || 'Erreur lors du téléversement du fichier.');
     } finally {
@@ -179,124 +185,167 @@ export const MeetingSessionTab: React.FC<MeetingSessionTabProps> = ({
             Séance en Direct & Procès-Verbal
           </h2>
           <p className="text-xs text-slate-400 mt-0.5">
-            Rédaction du PV en séance et gestion des pièces jointes hébergées sur kDrive
+            Accès aux dossiers de séances, édition Word OnlyOffice & Markdown
           </p>
         </div>
 
         <div className="flex items-center gap-3">
           <label className="text-xs text-slate-400 font-medium whitespace-nowrap">
-            Séance active :
+            Séance kDrive :
           </label>
           <select
-            value={currentDate}
-            onChange={(e) => setCurrentDate(e.target.value)}
-            className="px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-sm font-medium text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            value={selectedSessionId}
+            onChange={(e) => setSelectedSessionId(e.target.value)}
+            className="px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-sm font-medium text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 max-w-xs"
           >
-            {meetings.map((m) => (
-              <option key={m.id} value={m.dateStr}>
-                {m.dateStr} - {m.title}
+            {sessions.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name} ({s.fileCount} doc{s.fileCount > 1 ? 's' : ''})
               </option>
             ))}
           </select>
         </div>
       </div>
 
-      {/* 2. Grille principale : Rédacteur de PV (8 cols) & Pièces jointes kDrive (4 cols) */}
+      {/* 2. Grille principale : PV (8 cols) & Pièces jointes kDrive (4 cols) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         
-        {/* Colonne gauche (8 cols) : Éditeur PV */}
-        <div className="lg:col-span-8">
-          <div className="glass-card rounded-2xl border border-slate-800 p-5 flex flex-col h-full min-h-[620px]">
+        {/* Colonne gauche (8 cols) : Rédacteur de PV / Document Word OnlyOffice */}
+        <div className="lg:col-span-8 space-y-5">
+          
+          {/* Panneau de documents de la séance */}
+          <div className="glass-card rounded-2xl border border-slate-800 p-6">
             
-            {/* Header de l'éditeur */}
-            <div className="flex items-center justify-between pb-3 border-b border-slate-800 mb-3">
-              <div className="flex items-center gap-2">
-                <FileText className="w-4 h-4 text-indigo-400" />
-                <h3 className="font-bold text-sm text-white">
-                  {currentDate}_PV.md
-                </h3>
-                {hasUnsavedChanges && (
-                  <span className="text-[10px] px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 font-semibold border border-amber-500/30">
-                    Modifications non enregistrées
-                  </span>
-                )}
+            <div className="flex items-center justify-between pb-4 border-b border-slate-800 mb-5">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 flex items-center justify-center font-bold">
+                  📁
+                </div>
+                <div>
+                  <h3 className="font-bold text-base text-white">
+                    {activeSession ? activeSession.name : 'Séance'}
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Dossier kDrive #{activeSession?.id}
+                  </p>
+                </div>
               </div>
 
-              {activeMeeting?.kDrive?.pvFileId && (
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={handleSavePv}
-                    disabled={savingPv || !hasUnsavedChanges}
-                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white transition-all shadow-md shadow-emerald-600/20"
-                  >
-                    {savingPv ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    ) : (
-                      <Save className="w-3.5 h-3.5" />
-                    )}
-                    Enregistrer le PV
-                  </button>
-                </div>
+              {activeSession?.kdriveUrl && (
+                <a
+                  href={activeSession.kdriveUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-indigo-300 bg-indigo-950/60 border border-indigo-800/60 hover:bg-indigo-900/60 transition-colors"
+                >
+                  <FolderOpen className="w-3.5 h-3.5" />
+                  Ouvrir le dossier dans kDrive
+                  <ExternalLink className="w-3 h-3" />
+                </a>
               )}
             </div>
 
-            {/* Contenu */}
-            {!activeMeeting?.kDrive?.hasFolder ? (
-              <div className="flex-1 flex flex-col items-center justify-center text-center p-8 bg-slate-850/40 rounded-xl border border-slate-800/80">
-                <Calendar className="w-12 h-12 text-slate-600 mb-3" />
-                <h4 className="text-base font-semibold text-white mb-1">
-                  Dossier de séance non initialisé
-                </h4>
-                <p className="text-xs text-slate-400 max-w-sm mb-4">
-                  Rendez-vous dans l'onglet "Préparation & ODJ" pour créer le dossier et l'ordre du jour sur kDrive avant de démarrer le PV.
-                </p>
-              </div>
-            ) : !activeMeeting?.kDrive?.pvFileId ? (
-              <div className="flex-1 flex flex-col items-center justify-center text-center p-8 bg-slate-850/40 rounded-xl border border-slate-800/80">
-                <Play className="w-12 h-12 text-indigo-400 mb-3" />
-                <h4 className="text-base font-semibold text-white mb-1">
-                  Prêt à démarrer le procès-verbal
-                </h4>
-                <p className="text-xs text-slate-400 max-w-sm mb-4">
-                  Un clic sur "Démarrer le PV" va dupliquer automatiquement l'Ordre du Jour existant vers un nouveau fichier <span className="font-mono text-indigo-300">{currentDate}_PV.md</span>.
-                </p>
-                <button
-                  onClick={handleStartPv}
-                  disabled={isStartingPv}
-                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white shadow-lg shadow-indigo-600/30 transition-all active:scale-95"
-                >
-                  {isStartingPv ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Clonage de l'ODJ...
-                    </>
-                  ) : (
-                    <>
-                      <Play className="w-4 h-4" />
-                      Démarrer le PV
-                    </>
-                  )}
-                </button>
-              </div>
-            ) : loadingPv ? (
-              <div className="flex-1 flex items-center justify-center">
-                <Loader2 className="w-8 h-8 text-indigo-400 animate-spin" />
-              </div>
-            ) : (
-              <div className="flex-1 flex flex-col">
-                <textarea
-                  value={pvContent}
-                  onChange={(e) => {
-                    setPvContent(e.target.value);
-                    setHasUnsavedChanges(true);
-                  }}
-                  placeholder="Prenez des notes de décisions, adoption des points..."
-                  className="flex-1 w-full p-4 bg-slate-900 border border-slate-850 rounded-xl font-mono text-xs sm:text-sm text-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none leading-relaxed"
-                />
-                <div className="flex items-center justify-between text-[11px] text-slate-500 mt-2 px-1">
-                  <span>{pvContent.split(/\s+/).filter(Boolean).length} mots</span>
-                  <span>Sauvegarde manuelle anti rate-limiting kDrive</span>
+            {/* Carte dédiée au Document Word (OnlyOffice) si existant */}
+            {isPvDocx && pvFile ? (
+              <div className="p-5 rounded-2xl bg-gradient-to-r from-blue-950/40 via-indigo-950/30 to-slate-900 border border-blue-500/30 shadow-lg">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex items-start gap-3.5">
+                    <div className="p-3 rounded-xl bg-blue-600/20 text-blue-400 border border-blue-500/30 shrink-0">
+                      <FileType className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-500/20 text-blue-300 border border-blue-500/40">
+                          Word (.docx) • Infomaniak OnlyOffice
+                        </span>
+                      </div>
+                      <h4 className="text-base font-bold text-white mt-1">
+                        {pvFile.name}
+                      </h4>
+                      <p className="text-xs text-slate-300 mt-1 leading-relaxed">
+                        Ce document est un fichier Word officiel. Vous pouvez l'ouvrir directement dans <strong>Infomaniak OnlyOffice</strong> pour une édition collaborative en temps réel avec toute la mise en page, logo et tableaux.
+                      </p>
+                    </div>
+                  </div>
                 </div>
+
+                <div className="mt-5 pt-4 border-t border-blue-500/20 flex flex-wrap items-center justify-between gap-3">
+                  <span className="text-xs text-slate-400">
+                    Enregistrement automatique synchronisé sur kDrive
+                  </span>
+
+                  <a
+                    href={pvFile.kdriveUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-600/30 transition-all active:scale-95"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                    Ouvrir dans OnlyOffice (kDrive)
+                  </a>
+                </div>
+              </div>
+            ) : null}
+
+            {/* Document Ordre du Jour si présent en Word */}
+            {odjFile && (
+              <div className="mt-4 p-4 rounded-xl bg-slate-850/60 border border-slate-800 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-sky-500/10 text-sky-400 border border-sky-500/20">
+                    <FileText className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider">
+                      Ordre du jour de la séance
+                    </p>
+                    <p className="text-sm font-medium text-slate-200">{odjFile.name}</p>
+                  </div>
+                </div>
+
+                {odjFile.kdriveUrl && (
+                  <a
+                    href={odjFile.kdriveUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-300 bg-slate-800 hover:bg-slate-700 transition-colors"
+                  >
+                    <span>Consulter</span>
+                    <ExternalLink className="w-3 h-3 text-slate-400" />
+                  </a>
+                )}
+              </div>
+            )}
+
+            {/* Éditeur Enrichi avec Commandes Slash & Générateur Word */}
+            {activeSession && (
+              <div className="mt-6 pt-5 border-t border-slate-800">
+                <div className="mb-3 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <FileText className="w-4 h-4 text-brand-400" />
+                    <h4 className="text-sm font-bold text-white">
+                      Éditeur de Séance & Générateur Word (.docx)
+                    </h4>
+                  </div>
+                  <span className="text-[11px] text-slate-400">
+                    Tapez <kbd className="px-1.5 py-0.5 rounded bg-slate-800 text-brand-300 font-mono">/</kbd> pour les raccourcis, <kbd className="px-1.5 py-0.5 rounded bg-slate-800 text-indigo-300 font-mono">@</kbd> pour les membres
+                  </span>
+                </div>
+
+                <RichMeetingEditor
+                  folderId={activeSession.id}
+                  fileName={pvFile?.name || `${activeSession.name.replace(/\s+/g, '_')}_PV.docx`}
+                  initialContent={
+                    pvContent ||
+                    `# Procès-Verbal • ${activeSession.name}\n\n**Date :** ${activeSession.name}\n**Lieu :** Salle du Conseil / Visio\n**Présents :** \n**Excusés :** \n\n---\n\n## 1. Méditation & Prière\n> **PRIÈRE :** \n\n## 2. Adoption de l'ordre du jour et approbation du dernier PV\n> **DÉCISION :** \n\n## 3. Points à l'ordre du jour\n\n`
+                  }
+                  meetingDate={activeSession.name}
+                  docxTitle={`Procès-Verbal • ${activeSession.name}`}
+                  docxUrl={pvFile?.kdriveUrl}
+                  onSaved={() => {
+                    loadFolderFiles();
+                    fetchSessions();
+                  }}
+                />
               </div>
             )}
 
@@ -305,24 +354,21 @@ export const MeetingSessionTab: React.FC<MeetingSessionTabProps> = ({
 
         {/* Colonne droite (4 cols) : Gestionnaire d'annexes kDrive */}
         <div className="lg:col-span-4 space-y-5">
-          <div className="glass-card rounded-2xl border border-slate-800 p-5 flex flex-col h-full min-h-[620px]">
+          <div className="glass-card rounded-2xl border border-slate-800 p-5 flex flex-col h-full min-h-[550px]">
             
             <div className="flex items-center justify-between pb-3 border-b border-slate-800 mb-3">
               <div className="flex items-center gap-2">
                 <Paperclip className="w-4 h-4 text-brand-400" />
-                <h3 className="font-bold text-sm text-white">Annexes & Fichiers</h3>
+                <h3 className="font-bold text-sm text-white">Tous les Fichiers ({files.length})</h3>
               </div>
-              <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-800 text-slate-300">
-                {files.length}
-              </span>
             </div>
 
             <p className="text-xs text-slate-400 mb-4">
-              Pièces jointes stockées directement dans le dossier kDrive de la séance.
+              Documents et pièces jointes stockés sur kDrive pour cette séance.
             </p>
 
             {/* Zone Drag & Drop d'upload */}
-            {activeMeeting?.kDrive?.hasFolder && (
+            {activeSession && (
               <div
                 onDragOver={(e) => {
                   e.preventDefault();
@@ -334,7 +380,7 @@ export const MeetingSessionTab: React.FC<MeetingSessionTabProps> = ({
                   setDragOver(false);
                   handleFileUpload(e.dataTransfer.files);
                 }}
-                className={`p-5 rounded-2xl border-2 border-dashed text-center transition-all cursor-pointer mb-4 ${
+                className={`p-4 rounded-xl border-2 border-dashed text-center transition-all cursor-pointer mb-4 ${
                   dragOver
                     ? 'border-brand-500 bg-brand-500/10'
                     : 'border-slate-700/80 hover:border-slate-600 bg-slate-850/40'
@@ -346,18 +392,18 @@ export const MeetingSessionTab: React.FC<MeetingSessionTabProps> = ({
                   input.click();
                 }}
               >
-                <UploadCloud className="w-8 h-8 mx-auto text-brand-400 mb-1.5" />
+                <UploadCloud className="w-6 h-6 mx-auto text-brand-400 mb-1" />
                 <p className="text-xs font-semibold text-slate-200">
-                  {isUploading ? 'Téléversement en cours...' : 'Glisser un fichier ici'}
+                  {isUploading ? 'Téléversement en cours...' : 'Ajouter un document'}
                 </p>
-                <p className="text-[10px] text-slate-500 mt-0.5">
-                  PDF, tableur, images (max 50 Mo)
+                <p className="text-[10px] text-slate-500">
+                  Glisser ici un Word, PDF, image...
                 </p>
               </div>
             )}
 
             {/* Liste des fichiers */}
-            <div className="flex-1 overflow-y-auto space-y-2 pr-1">
+            <div className="flex-1 overflow-y-auto space-y-2 pr-1 max-h-[460px]">
               {loadingFiles ? (
                 <div className="py-8 text-center">
                   <Loader2 className="w-6 h-6 mx-auto text-brand-400 animate-spin" />
@@ -367,34 +413,46 @@ export const MeetingSessionTab: React.FC<MeetingSessionTabProps> = ({
                   Aucun fichier dans ce dossier kDrive.
                 </div>
               ) : (
-                files.map((file) => (
-                  <div
-                    key={file.id}
-                    className="p-3 rounded-xl bg-slate-850/60 border border-slate-800 flex items-center justify-between text-xs hover:border-slate-700 transition-colors"
-                  >
-                    <div className="flex items-center gap-2.5 truncate pr-2">
-                      <File className="w-4 h-4 text-slate-400 shrink-0" />
-                      <div className="truncate">
-                        <p className="text-slate-200 font-medium truncate">{file.name}</p>
-                        <p className="text-[10px] text-slate-500">
-                          {file.size ? `${(file.size / 1024).toFixed(1)} Ko` : 'Dossier'}
-                        </p>
-                      </div>
-                    </div>
+                files.map((file) => {
+                  const isDoc = /\.(docx?)$/i.test(file.name);
+                  const isPdf = /\.pdf$/i.test(file.name);
 
-                    {file.kdriveUrl && (
-                      <a
-                        href={file.kdriveUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="p-1.5 text-slate-400 hover:text-brand-300 hover:bg-slate-800 rounded-lg transition-colors shrink-0"
-                        title="Ouvrir dans kDrive"
-                      >
-                        <ExternalLink className="w-3.5 h-3.5" />
-                      </a>
-                    )}
-                  </div>
-                ))
+                  return (
+                    <div
+                      key={file.id}
+                      className="p-3 rounded-xl bg-slate-850/60 border border-slate-800 flex items-center justify-between text-xs hover:border-slate-700 transition-colors"
+                    >
+                      <div className="flex items-center gap-2.5 truncate pr-2">
+                        {isDoc ? (
+                          <FileType className="w-4 h-4 text-blue-400 shrink-0" />
+                        ) : isPdf ? (
+                          <FileText className="w-4 h-4 text-rose-400 shrink-0" />
+                        ) : (
+                          <File className="w-4 h-4 text-slate-400 shrink-0" />
+                        )}
+                        <div className="truncate">
+                          <p className="text-slate-200 font-medium truncate">{file.name}</p>
+                          <p className="text-[10px] text-slate-500">
+                            {file.size ? `${(file.size / 1024).toFixed(1)} Ko` : 'Fichier'}
+                            {isDoc ? ' • Word OnlyOffice' : ''}
+                          </p>
+                        </div>
+                      </div>
+
+                      {file.kdriveUrl && (
+                        <a
+                          href={file.kdriveUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="p-1.5 text-slate-400 hover:text-brand-300 hover:bg-slate-800 rounded-lg transition-colors shrink-0"
+                          title={isDoc ? 'Ouvrir dans OnlyOffice' : 'Ouvrir dans kDrive'}
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                        </a>
+                      )}
+                    </div>
+                  );
+                })
               )}
             </div>
 
