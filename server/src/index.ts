@@ -59,7 +59,7 @@ app.use((err: any, req: Request, res: Response, next: NextFunction) => {
 
 // Démarrage du serveur
 const PORT = config.port;
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.log('---------------------------------------------------------');
   console.log(`🚀 Serveur Tableau de Bord Comité démarré sur le port ${PORT}`);
   console.log(`🌍 URL : http://localhost:${PORT}`);
