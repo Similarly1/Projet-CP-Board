@@ -11,8 +11,8 @@ const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 // Middleware de vérification d'authentification
 export const requireAuth = (req: Request, res: Response, next: () => void) => {
-  // Si ni mot de passe ni OAuth configuré, accès libre
-  if (!config.appPassword && !config.churchTools.clientId) {
+  // Si OAuth non configuré, accès libre (mode dev sans auth)
+  if (!config.churchTools.clientId) {
     return next();
   }
 
@@ -20,27 +20,22 @@ export const requireAuth = (req: Request, res: Response, next: () => void) => {
   const token = authHeader?.replace(/^Bearer\s+/i, '');
 
   if (!token) {
-    return res.status(401).json({ error: 'Accès non autorisé. Authentification requise.' });
+    return res.status(401).json({ error: 'Accès non autorisé. Connexion ChurchTools requise.' });
   }
 
-  // 1. Vérification par mot de passe global
-  if (config.appPassword && token === config.appPassword) {
-    return next();
-  }
-
-  // 2. Vérification par session OAuth ChurchTools
+  // Vérification de la session OAuth ChurchTools en cache/base SQLite
   const session = cacheService.get<{ userId: string | number; name: string; email?: string }>(`session:${token}`);
   if (session) {
     (req as any).user = session;
     return next();
   }
 
-  return res.status(401).json({ error: 'Session expirée ou non autorisée. Veuillez vous reconnecter.' });
+  return res.status(401).json({ error: 'Session expirée ou invalide. Veuillez vous reconnecter avec ChurchTools.' });
 };
 
 // Vérification du statut d'authentification
 router.get('/check', (req, res) => {
-  const isAuthRequired = Boolean(config.appPassword || config.churchTools.clientId);
+  const isAuthRequired = Boolean(config.churchTools.clientId);
   let isAuthenticated = !isAuthRequired;
   let currentUser: any = null;
 
@@ -49,15 +44,10 @@ router.get('/check', (req, res) => {
     const token = authHeader?.replace(/^Bearer\s+/i, '');
 
     if (token) {
-      if (config.appPassword && token === config.appPassword) {
+      const session = cacheService.get<{ userId: string | number; name: string; email?: string }>(`session:${token}`);
+      if (session) {
         isAuthenticated = true;
-        currentUser = { name: 'Membre du Comité' };
-      } else {
-        const session = cacheService.get<{ userId: string | number; name: string; email?: string }>(`session:${token}`);
-        if (session) {
-          isAuthenticated = true;
-          currentUser = session;
-        }
+        currentUser = session;
       }
     }
   }
@@ -66,23 +56,7 @@ router.get('/check', (req, res) => {
     authRequired: isAuthRequired,
     authenticated: isAuthenticated,
     user: currentUser,
-    hasChurchToolsOAuth: Boolean(config.churchTools.clientId),
   });
-});
-
-// Connexion classique par mot de passe global
-router.post('/login', (req, res) => {
-  const { password } = req.body;
-
-  if (!config.appPassword) {
-    return res.json({ success: true, token: 'no-password-needed' });
-  }
-
-  if (password === config.appPassword) {
-    return res.json({ success: true, token: password, user: { name: 'Membre du Comité' } });
-  }
-
-  return res.status(401).json({ error: 'Mot de passe incorrect.' });
 });
 
 // 1. Redirection vers la page de login OAuth de ChurchTools
@@ -111,7 +85,6 @@ router.get('/churchtools/callback', async (req, res) => {
     const redirectUri = config.churchTools.redirectUri || 'http://localhost:3000/api/auth/churchtools/callback';
 
     // Échange du code d'autorisation contre un token d'accès
-    // Supporte application/x-www-form-urlencoded standard OAuth
     const params = new URLSearchParams();
     params.append('grant_type', 'authorization_code');
     params.append('client_id', config.churchTools.clientId || '');
@@ -158,7 +131,7 @@ router.get('/churchtools/callback', async (req, res) => {
   } catch (err: any) {
     console.error('Erreur lors du callback OAuth ChurchTools:', err.response?.data || err.message);
     const msg = err.response?.data?.error_description || err.response?.data?.message || err.message;
-    return res.redirect('/?auth_error=' + encodeURIComponent(`Erreur d'authentification: ${msg}`));
+    return res.redirect('/?auth_error=' + encodeURIComponent(`Erreur d'authentification ChurchTools: ${msg}`));
   }
 });
 
