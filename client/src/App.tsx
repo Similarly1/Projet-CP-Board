@@ -144,6 +144,30 @@ const AppContent: React.FC = () => {
     setActiveTab(tab);
   };
 
+  if (authNeeded) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center p-4 bg-slate-950 text-slate-100 relative overflow-hidden">
+        {/* Halos d'ambiance discrets */}
+        <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-brand-500/10 rounded-full blur-[120px] pointer-events-none" />
+        <div className="absolute -bottom-20 right-10 w-80 h-80 bg-sky-500/10 rounded-full blur-[100px] pointer-events-none" />
+
+        <AuthModal
+          isOpen={true}
+          hasChurchToolsOAuth={hasChurchToolsOAuth}
+          initialError={authErrorMsg}
+          onSuccess={() => {
+            setAuthErrorMsg(null);
+            initApp();
+          }}
+        />
+
+        <footer className="mt-8 text-center text-xs text-slate-600 relative z-10">
+          <p>Tableau de Bord Comité • Assemblée Missionnaire Delémont</p>
+        </footer>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen flex flex-col bg-slate-950 text-slate-100">
       
@@ -213,16 +237,6 @@ const AppContent: React.FC = () => {
         </p>
       </footer>
 
-      {/* Modale d'authentification (si mot de passe ou SSO activé) */}
-      <AuthModal
-        isOpen={authNeeded}
-        hasChurchToolsOAuth={hasChurchToolsOAuth}
-        initialError={authErrorMsg}
-        onSuccess={() => {
-          setAuthErrorMsg(null);
-          initApp();
-        }}
-      />
 
       {/* Modale Follow-up ChurchTools */}
       <FollowUpModal isOpen={isFollowUpOpen} onClose={() => setIsFollowUpOpen(false)} />
