@@ -22,6 +22,53 @@ router.get('/', async (req, res) => {
 });
 
 /**
+ * GET /api/meetings/upcoming
+ * Récupère les séances à venir (prioritaire sur /:folderId)
+ * Compatible avec l'écran Dashboard (meetings: Meeting[]) et l'API (meeting: MeetingSummary)
+ */
+router.get('/upcoming', async (req, res) => {
+  try {
+    const year = new Date().getFullYear();
+    const meetingsList = await meetingsService.listMeetings(year);
+
+    const mappedMeetings = meetingsList.map((m) => ({
+      id: m.folderId || m.dateStr,
+      title: m.displayTitle,
+      startDate: m.churchToolsAppointment?.startDate || `${m.dateStr}T19:30:00`,
+      endDate: m.churchToolsAppointment?.endDate,
+      location: m.churchToolsAppointment?.location || 'AMD Delémont',
+      description: m.churchToolsAppointment?.description,
+      calendarName: 'CP & EMP • CE & EMS',
+      dateStr: m.dateStr,
+      kDrive: {
+        folderId: m.folderId,
+        folderName: m.folderName,
+        folderUrl: m.folderId ? `https://ksuite.infomaniak.com/129335/kdrive/app/drive/1198945/files/${m.folderId}` : undefined,
+        hasFolder: !!m.folderId,
+        odjIsDocx: m.hasOj,
+        pvIsDocx: m.hasPv,
+      },
+    }));
+
+    const upcomingMeetings = mappedMeetings.filter((m) => {
+      const summary = meetingsList.find((x) => x.dateStr === m.dateStr);
+      return summary?.isUpcoming;
+    });
+
+    // Trier les séances à venir dans l'ordre chronologique (la plus proche en premier)
+    upcomingMeetings.sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
+
+    res.json({
+      meetings: upcomingMeetings.length > 0 ? upcomingMeetings : mappedMeetings.slice(0, 5),
+      meeting: upcomingMeetings[0] || mappedMeetings[0] || null,
+    });
+  } catch (err: any) {
+    console.error('Erreur /api/meetings/upcoming:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
  * GET /api/meetings/:folderId
  * Récupère le détail complet d'une séance (OJ, PV, Fichiers, Rôles)
  */

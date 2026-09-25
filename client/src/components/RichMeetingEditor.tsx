@@ -17,7 +17,10 @@ import {
   Eye,
   Edit3,
   HelpCircle,
-  FileDown
+  FileDown,
+  Maximize2,
+  Minimize2,
+  BookOpen
 } from 'lucide-react';
 import { CommitteeMember } from '../types';
 import { api } from '../services/api';
@@ -30,6 +33,7 @@ interface RichMeetingEditorProps {
   meetingDate?: string;
   docxTitle?: string;
   docxUrl?: string;
+  ojMemoContent?: string;
   onSaved?: () => void;
 }
 
@@ -48,6 +52,7 @@ export const RichMeetingEditor: React.FC<RichMeetingEditorProps> = ({
   meetingDate,
   docxTitle,
   docxUrl,
+  ojMemoContent,
   onSaved,
 }) => {
   const { success, error } = useToast();
@@ -57,6 +62,19 @@ export const RichMeetingEditor: React.FC<RichMeetingEditorProps> = ({
   const [isSaving, setIsSaving] = useState(false);
   const [syncTasks, setSyncTasks] = useState(true);
   const [viewMode, setViewMode] = useState<'edit' | 'preview'>('edit');
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [showOjMemo, setShowOjMemo] = useState(false);
+
+  // Écoute de la touche Échap pour quitter le mode plein écran
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isFullscreen) {
+        setIsFullscreen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isFullscreen]);
 
   // Membres du CP
   const [members, setMembers] = useState<CommitteeMember[]>([]);
@@ -347,7 +365,13 @@ export const RichMeetingEditor: React.FC<RichMeetingEditorProps> = ({
   };
 
   return (
-    <div className="flex flex-col h-full bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+    <div
+      className={
+        isFullscreen
+          ? 'fixed inset-0 z-50 bg-slate-950 flex flex-col p-4 sm:p-6 overflow-hidden'
+          : 'flex flex-col h-full bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl'
+      }
+    >
       
       {/* 1. Barre d'outils supérieure */}
       <div className="p-3 bg-slate-950/80 border-b border-slate-800/80 flex flex-wrap items-center justify-between gap-3">
@@ -437,7 +461,7 @@ export const RichMeetingEditor: React.FC<RichMeetingEditorProps> = ({
         </div>
 
         {/* Actions & Sauvegarde */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3">
           
           {/* Synchroniser les tâches auto */}
           <label className="flex items-center gap-1.5 text-xs text-slate-400 cursor-pointer select-none">
@@ -447,7 +471,7 @@ export const RichMeetingEditor: React.FC<RichMeetingEditorProps> = ({
               onChange={(e) => setSyncTasks(e.target.checked)}
               className="w-3.5 h-3.5 rounded border-slate-700 bg-slate-800 text-brand-600 focus:ring-0"
             />
-            <span>Sync tâches kDrive</span>
+            <span className="hidden md:inline">Sync tâches kDrive</span>
           </label>
 
           {/* Bascule Vue brut / Aperçu stylisé */}
@@ -457,7 +481,39 @@ export const RichMeetingEditor: React.FC<RichMeetingEditorProps> = ({
             className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-300 hover:bg-slate-800 transition-colors"
           >
             {viewMode === 'edit' ? <Eye className="w-3.5 h-3.5" /> : <Edit3 className="w-3.5 h-3.5" />}
-            <span>{viewMode === 'edit' ? 'Aperçu Document' : 'Mode Éditeur'}</span>
+            <span>{viewMode === 'edit' ? 'Aperçu' : 'Édition'}</span>
+          </button>
+
+          {/* Tiroir mémo Ordre du Jour (si en plein écran) */}
+          {ojMemoContent && isFullscreen && (
+            <button
+              type="button"
+              onClick={() => setShowOjMemo(!showOjMemo)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                showOjMemo
+                  ? 'bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 shadow-sm'
+                  : 'text-slate-300 hover:bg-slate-800 bg-slate-900 border border-slate-700'
+              }`}
+              title="Afficher l'Ordre du Jour en mémo sur le côté"
+            >
+              <BookOpen className="w-3.5 h-3.5 text-emerald-400" />
+              <span>{showOjMemo ? "Masquer l'OJ" : "Voir l'OJ"}</span>
+            </button>
+          )}
+
+          {/* Bouton Plein Écran */}
+          <button
+            type="button"
+            onClick={() => setIsFullscreen(!isFullscreen)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+              isFullscreen
+                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
+                : 'text-slate-300 hover:bg-slate-800 bg-slate-900 border border-slate-700'
+            }`}
+            title={isFullscreen ? 'Quitter le plein écran (Échap)' : 'Mode plein écran sans distraction'}
+          >
+            {isFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+            <span>{isFullscreen ? 'Réduire' : 'Plein écran'}</span>
           </button>
 
           {/* Bouton Ouvrir dans OnlyOffice si disponible */}
@@ -484,12 +540,12 @@ export const RichMeetingEditor: React.FC<RichMeetingEditorProps> = ({
             {isSaving ? (
               <>
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                Génération Word...
+                <span>Génération Word...</span>
               </>
             ) : (
               <>
                 <Save className="w-3.5 h-3.5" />
-                Enregistrer & Générer Word (.docx)
+                <span>Enregistrer Word (.docx)</span>
               </>
             )}
           </button>
@@ -499,10 +555,12 @@ export const RichMeetingEditor: React.FC<RichMeetingEditorProps> = ({
       </div>
 
       {/* 2. Zone principale : Édition ou Aperçu stylisé */}
-      <div className="relative flex-1 flex flex-col min-h-[500px]">
+      <div className={`relative flex-1 flex ${showOjMemo && isFullscreen ? 'gap-6' : ''} overflow-hidden min-h-[500px]`}>
         
-        {viewMode === 'edit' ? (
-          <div className="relative flex-1 flex flex-col">
+        {/* Colonne de rédaction / aperçu */}
+        <div className={`flex-1 flex flex-col ${isFullscreen && !showOjMemo ? 'max-w-5xl w-full mx-auto' : ''} overflow-hidden`}>
+          {viewMode === 'edit' ? (
+            <div className="relative flex-1 flex flex-col">
             <textarea
               ref={textareaRef}
               value={content}
@@ -647,6 +705,29 @@ export const RichMeetingEditor: React.FC<RichMeetingEditorProps> = ({
                   return <p key={lIdx} className="text-xs text-slate-300">{line}</p>;
                 })}
               </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+        {/* Volet latéral mémo de l'Ordre du Jour (uniquement en plein écran si activé) */}
+        {showOjMemo && isFullscreen && ojMemoContent && (
+          <div className="w-80 sm:w-96 bg-slate-900 border border-slate-800 rounded-xl p-5 flex flex-col overflow-hidden shadow-2xl animate-in slide-in-from-right duration-200">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800 mb-3">
+              <div className="flex items-center gap-2">
+                <BookOpen className="w-4 h-4 text-emerald-400" />
+                <h4 className="text-sm font-bold text-white">Ordre du Jour (Mémo)</h4>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowOjMemo(false)}
+                className="text-xs text-slate-400 hover:text-white"
+              >
+                Masquer
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto pr-1 text-xs text-slate-300 leading-relaxed whitespace-pre-wrap font-sans">
+              {ojMemoContent}
             </div>
           </div>
         )}
