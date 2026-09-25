@@ -29,6 +29,8 @@ const AppContent: React.FC = () => {
 
   // Authentification
   const [authNeeded, setAuthNeeded] = useState(false);
+  const [hasChurchToolsOAuth, setHasChurchToolsOAuth] = useState(true);
+  const [authErrorMsg, setAuthErrorMsg] = useState<string | null>(null);
 
   // Modales
   const [isFollowUpOpen, setIsFollowUpOpen] = useState(false);
@@ -37,7 +39,29 @@ const AppContent: React.FC = () => {
   // Initialisation et vérification Auth
   const initApp = useCallback(async () => {
     try {
+      // 1. Détection des retours OAuth depuis ChurchTools dans l'URL
+      const urlParams = new URLSearchParams(window.location.search);
+      const urlToken = urlParams.get('auth_token');
+      const urlUser = urlParams.get('auth_user');
+      const urlError = urlParams.get('auth_error');
+
+      if (urlToken) {
+        api.setAuthToken(urlToken);
+        if (urlUser) {
+          localStorage.setItem('cp_board_user_name', urlUser);
+        }
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+
+      if (urlError) {
+        setAuthErrorMsg(urlError);
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+
+      // 2. Vérification de la session auprès de l'API
       const auth = await api.checkAuth();
+      setHasChurchToolsOAuth(Boolean(auth.hasChurchToolsOAuth));
+
       if (auth.authRequired && !auth.authenticated) {
         setAuthNeeded(true);
         return;
@@ -189,8 +213,16 @@ const AppContent: React.FC = () => {
         </p>
       </footer>
 
-      {/* Modale d'authentification (si mot de passe activé) */}
-      <AuthModal isOpen={authNeeded} onSuccess={() => initApp()} />
+      {/* Modale d'authentification (si mot de passe ou SSO activé) */}
+      <AuthModal
+        isOpen={authNeeded}
+        hasChurchToolsOAuth={hasChurchToolsOAuth}
+        initialError={authErrorMsg}
+        onSuccess={() => {
+          setAuthErrorMsg(null);
+          initApp();
+        }}
+      />
 
       {/* Modale Follow-up ChurchTools */}
       <FollowUpModal isOpen={isFollowUpOpen} onClose={() => setIsFollowUpOpen(false)} />

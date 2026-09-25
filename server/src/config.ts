@@ -15,6 +15,8 @@ export interface AppConfig {
     token: string;
     committeeGroupId: number;
     calendarId: number;
+    clientId?: string;
+    redirectUri?: string;
     isConfigured: boolean;
   };
   kDrive: {
@@ -36,6 +38,8 @@ export const config: AppConfig = {
     token: process.env.CHURCHTOOLS_API_TOKEN || '',
     committeeGroupId: parseInt(process.env.CHURCHTOOLS_COMMITTEE_GROUP_ID || '0', 10),
     calendarId: parseInt(process.env.CHURCHTOOLS_CALENDAR_ID || '4', 10),
+    clientId: process.env.CHURCHTOOLS_CLIENT_ID || '527f37bfae3852069cf863345fe1072996496c3d92eff393b786314700bd10de',
+    redirectUri: process.env.CHURCHTOOLS_REDIRECT_URI || 'http://localhost:3000/api/auth/churchtools/callback',
     get isConfigured() {
       return Boolean(this.baseUrl && this.token);
     },

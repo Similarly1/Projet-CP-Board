@@ -48,16 +48,19 @@ const customFetch = async (url: string, options: RequestInit = {}) => {
 };
 
 export const api = {
+  getAuthToken,
+  setAuthToken,
+
   // Statut & Auth
   async getStatus(): Promise<SystemStatus> {
     return customFetch('/api/status');
   },
 
-  async checkAuth(): Promise<{ authRequired: boolean; authenticated: boolean }> {
+  async checkAuth(): Promise<{ authRequired: boolean; authenticated: boolean; user?: any; hasChurchToolsOAuth?: boolean }> {
     return customFetch('/api/auth/check');
   },
 
-  async login(password: string): Promise<{ success: boolean; token: string }> {
+  async login(password: string): Promise<{ success: boolean; token: string; user?: any }> {
     const res = await customFetch('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -66,7 +69,21 @@ export const api = {
     if (res.token) {
       setAuthToken(res.token);
     }
+    if (res.user?.name) {
+      localStorage.setItem('cp_board_user_name', res.user.name);
+    }
     return res;
+  },
+
+  async logout(): Promise<void> {
+    try {
+      await customFetch('/api/auth/logout', { method: 'POST' });
+    } catch (e) {
+      // Ignorer
+    }
+    setAuthToken(null);
+    localStorage.removeItem('cp_board_user_name');
+    window.location.reload();
   },
 
   // Réunions unifiées (dossiers CP MM.DD kDrive + ChurchTools)

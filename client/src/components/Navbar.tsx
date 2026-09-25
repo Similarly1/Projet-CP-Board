@@ -10,8 +10,11 @@ import {
   Database,
   ExternalLink,
   ChevronDown,
-  LayoutDashboard
+  LayoutDashboard,
+  LogOut,
+  User
 } from 'lucide-react';
+import { api } from '../services/api';
 import { SystemStatus } from '../types';
 
 interface NavbarProps {
@@ -117,6 +120,21 @@ export const Navbar: React.FC<NavbarProps> = ({
             >
               <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin text-brand-400' : ''}`} />
             </button>
+
+            {/* Utilisateur connecté & Déconnexion */}
+            {Boolean(api.getAuthToken()) && (
+              <button
+                onClick={() => api.logout()}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-800/60 hover:bg-rose-950/40 text-xs text-slate-300 hover:text-rose-300 border border-slate-700/60 hover:border-rose-800/60 transition-colors"
+                title="Cliquer pour se déconnecter"
+              >
+                <User className="w-3.5 h-3.5 text-brand-400" />
+                <span className="hidden sm:inline font-medium max-w-[110px] truncate">
+                  {localStorage.getItem('cp_board_user_name') || 'Comité'}
+                </span>
+                <LogOut className="w-3 h-3 text-slate-400 hover:text-rose-400 shrink-0" />
+              </button>
+            )}
 
             {/* Indicateur de connectivité / Status Popover */}
             <div className="relative">
